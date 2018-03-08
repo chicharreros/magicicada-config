@@ -21,8 +21,8 @@ NOTHING_TO_LAND = 'No approved proposals found for %s'
 
 # The path to your lp:tarmac branch (bzr branch lp:tarmac)
 TARMAC_HOME = os.path.abspath(
-    os.environ.get('TARMAC_HOME', '/usr/local/tarmac'))
-assert os.path.is_dir(TARMAC_HOME), '%s should be a valid folder' % TARMAC_HOME
+    os.environ.get('TARMAC_HOME', '/var/cache/tarmac'))
+assert os.path.isdir(TARMAC_HOME), '%s should be a valid folder' % TARMAC_HOME
 
 # The path to a folder containing the clones of the 4 magicicada projects:
 # mkdir ~/tmp/magicicada
@@ -33,13 +33,13 @@ assert os.path.is_dir(TARMAC_HOME), '%s should be a valid folder' % TARMAC_HOME
 # git clone git@github.com:chicharreros/magicicada-gui.git
 MAGICICADA_GH_HOME = os.path.abspath(os.environ.get('MAGICICADA_GH_HOME', '.'))
 for i in PROJECTS:
-    path = os.path.join(MAGICICADA_GH_HOME, i)
-    assert os.path.is_dir(path), '%s should be a valid folder' % path
+    path = os.path.join(MAGICICADA_GH_HOME, i.replace('lp:', '', 1))
+    assert os.path.isdir(path), '%s should be a valid folder' % path
 
 # The path to a file with your twitter credentials to advertise the commits
 TWITTER_AUTH_JSON = os.path.abspath(
     os.environ.get('TWITTER_AUTH_JSON', 'auth.json'))
-assert os.path.is_file(TWITTER_AUTH_JSON), (
+assert os.path.isfile(TWITTER_AUTH_JSON), (
     '%s should be a valid file' % TWITTER_AUTH_JSON)
 
 
@@ -77,6 +77,21 @@ def check_output(cmd, dry_run=False, **kwargs):
     return result
 
 
+def parse_bzr_commit_log(dry_run=True):
+    lines = check_output(['bzr', 'log', '-l1', project], dry_run=dry_run)
+    data = {}
+    for line in lines.replace(':\n', ':').split('\n'):
+        if ':' not in line:
+            continue
+        k, v = line.split(':', 1)
+        data[k] = v.strip()
+    author = data['author']
+    name, email = author.rsplit(' ', 1)
+    data['name'] = name
+    data['email'] = email.strip('<>')
+    return data
+
+
 def main(project, force=False, dry_run=False):
     target = project.replace('lp:', '')
     github_clone_path = os.path.join(MAGICICADA_GH_HOME, target)
@@ -94,18 +109,22 @@ def main(project, force=False, dry_run=False):
         print(NOTHING_TO_LAND % project)
         return
 
-    commit_msg = check_output(
-        ['bzr', 'log', '-l1', '--line', project], dry_run=dry_run).strip()
+    commit_data = parse_bzr_commit_log(dry_run=dry_run)
     check_output(['bzr', 'export', source, project], dry_run=dry_run)
     try:
         # source folder needs to end with /, otherwise rsync will sync the
         # folder itself instead its contents.
         check_output(
             "rsync --delete -zvrh --exclude='.git/' %s/ %s" %
-            (source.rstrip('/'), target), shell=True, dry_run=dry_run)
+            (source.rstrip('/'), github_clone_path), shell=True,
+            dry_run=dry_run)
         os.chdir(github_clone_path)
         check_output(['git', 'add', '*'], dry_run=dry_run)
-        check_output(['git', 'commit', '-a', '-m', commit_msg], dry_run=dry_run)
+        env = {'GIT_COMMITTER_NAME': commit_data['name'],
+               'GIT_COMMITTER_EMAIL': commit_data['email']}
+        check_output(['git', 'commit', '-a', '-m', commit_data['message'],
+                      '--author="%s"' % commit_data['author']], dry_run=dry_run,
+                     env=env)
         check_output(['git', 'push', 'origin', 'master'], dry_run=dry_run)
     finally:
         shutil.rmtree(source)
@@ -114,7 +133,8 @@ def main(project, force=False, dry_run=False):
         return  # early exit, do not tweet.
 
     # tweet
-    msg = 'Commit in %s: %s' % (target.replace('magicicada-', ''), commit_msg)
+    msg = 'Commit in %s: %s' % (
+        target.replace('magicicada-', ''), commit_data['message'])
     tweet(msg, dry_run=dry_run)
 
 
