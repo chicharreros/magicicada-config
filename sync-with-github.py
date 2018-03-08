@@ -43,9 +43,8 @@ assert os.path.isfile(TWITTER_AUTH_JSON), (
     '%s should be a valid file' % TWITTER_AUTH_JSON)
 
 
-def tweet(msg, dry_run=False):
-    allowed_len = 140
-    msg = msg.rpartition(']')[-1].strip()
+def do_tweet(msg, dry_run=False):
+    allowed_len = 240
     if len(msg) > allowed_len:
         msg = msg[:allowed_len - 3] + '...'
     print('\n\n---------------- TWEETTING %s -------------------' % len(msg))
@@ -54,7 +53,7 @@ def tweet(msg, dry_run=False):
     if dry_run:
         return
     with open(TWITTER_AUTH_JSON) as f:
-        oauth_creds = json.loads(f.read)
+        oauth_creds = json.loads(f.read())
     auth = tweepy.OAuthHandler(
         oauth_creds['consumer_token'], oauth_creds['consumer_secret'])
     auth.set_access_token(
@@ -92,7 +91,7 @@ def parse_bzr_commit_log(dry_run=True):
     return data
 
 
-def main(project, force=False, dry_run=False):
+def main(project, tweet=True, force=False, dry_run=False):
     target = project.replace('lp:', '')
     github_clone_path = os.path.join(MAGICICADA_GH_HOME, target)
     assert os.path.isdir(github_clone_path), (
@@ -126,16 +125,18 @@ def main(project, force=False, dry_run=False):
                       '--author="%s"' % commit_data['author']], dry_run=dry_run,
                      env=env)
         check_output(['git', 'push', 'origin', 'master'], dry_run=dry_run)
+    except Exception as e:
+        print e
     finally:
         shutil.rmtree(source)
 
-    if force:
+    if force and not tweet:
         return  # early exit, do not tweet.
 
     # tweet
     msg = 'Commit in %s: %s' % (
         target.replace('magicicada-', ''), commit_data['message'])
-    tweet(msg, dry_run=dry_run)
+    do_tweet(msg, dry_run=dry_run)
 
 
 if __name__ == '__main__':
