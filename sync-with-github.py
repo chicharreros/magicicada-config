@@ -76,7 +76,7 @@ def check_output(cmd, dry_run=False, **kwargs):
     return result
 
 
-def parse_bzr_commit_log(dry_run=True):
+def parse_bzr_commit_log(project, dry_run=True):
     lines = check_output(['bzr', 'log', '-l1', project], dry_run=dry_run)
     data = {}
     for line in lines.replace(':\n', ':').split('\n'):
@@ -108,7 +108,7 @@ def main(project, tweet=True, force=False, dry_run=False):
         print(NOTHING_TO_LAND % project)
         return
 
-    commit_data = parse_bzr_commit_log(dry_run=dry_run)
+    commit_data = parse_bzr_commit_log(project, dry_run=dry_run)
     check_output(['bzr', 'export', source, project], dry_run=dry_run)
     try:
         # source folder needs to end with /, otherwise rsync will sync the
